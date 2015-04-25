@@ -18,7 +18,9 @@ SOURCES += \
 
 HEADERS += \
     mikrotik_global.h \
-    router.h
+    router.h \
+    router_p.h \
+    sysdep.h
 
 unix {
     target.path = /usr/lib

@@ -1,12 +1,15 @@
 #ifndef ROUTER_H
 #define ROUTER_H
 
+#include "mikrotik_global.h"
 #include <QObject>
 #include <QHostAddress>
 
 namespace qmikrotik {
 
-class Router : public QObject
+class RouterPrivate;
+
+class MIKROTIKSHARED_EXPORT Router : public QObject
 {
     Q_OBJECT
 public:
@@ -23,7 +26,7 @@ public:
     QString username() const;
 
     void setPassword(const QString &password);
-    QString password();
+    QString password() const;
 
     enum class STATE {
         DISCONNECTED,
@@ -34,12 +37,22 @@ public:
 
 signals:
     void stateChanged(STATE state);
-    void reply(const Sentence &sentence);
+    //void reply(const Sentence &sentence);
 
 public slots:
     void login();
     void logout();
-    void request(const Sentence &sentence);
+    //void request(const Sentence &sentence);
+
+protected:
+    RouterPrivate * const d_ptr;
+    Router(RouterPrivate &dd, QObject *parent);
+
+private:
+    Q_DECLARE_PRIVATE(Router)
+    Q_PRIVATE_SLOT(d_func(), void _q_state_changed(QAbstractSocket::SocketState))
+    Q_PRIVATE_SLOT(d_func(), void _q_ready_read())
+    Q_PRIVATE_SLOT(d_func(), void _q_error(QAbstractSocket::SocketError))
 };
 
 } // qmikrotik

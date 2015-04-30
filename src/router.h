@@ -28,21 +28,22 @@ public:
     void setPassword(const QString &password);
     QString password() const;
 
-    enum class STATE {
+    enum STATE {
         DISCONNECTED,
         CONNECTING,
         LOGGING_IN,
+        EXECUTING,
         READY
     };
 
 signals:
-    void stateChanged(STATE state);
-    //void reply(const Sentence &sentence);
+    void stateChanged(Router::STATE state);
+    void reply(const QStringList &sentence);
 
 public slots:
     void login();
     void logout();
-    //void request(const Sentence &sentence);
+    void request(const QStringList &sentence);
 
 protected:
     RouterPrivate * const d_ptr;

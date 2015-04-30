@@ -21,8 +21,11 @@ public:
     void _q_error(QAbstractSocket::SocketError error);
 
     QByteArray pack_length(quint32 length);
-    quint8 * unpack_length(quint32 &to, quint8 *p, quint8 available, bool *success);
+    quint8 * unpack_length(quint32 &to, quint8 *p, quint32 available, bool *success);
+
     void write_word(const QString &word);
+    void write_sentence(const QStringList &sentence);
+    void process_incoming_sentence(const QStringList &sentence);
 
     void test();
 
@@ -39,6 +42,10 @@ public:
     QByteArray t;
 
     Router * q_ptr;
+
+    Router::STATE state;
+
+    QList<QStringList> requestList;
 };
 
 } // qmikrotik

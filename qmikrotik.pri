@@ -1,0 +1,2 @@
+ROOT_DIR = $$PWD
+BUILD_DIR = $$ROOT_DIR/build

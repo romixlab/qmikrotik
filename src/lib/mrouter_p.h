@@ -1,20 +1,19 @@
-#ifndef ROUTERPRIVATE_H
-#define ROUTERPRIVATE_H
+#ifndef MROUTERPRIVATE_H
+#define MROUTERPRIVATE_H
 
-#include "router.h"
 #include <QObject>
 #include <QHostAddress>
 
+#include "mrouter.h"
+#include "mcommand.h"
+
 class QTcpSocket;
-
-namespace qmikrotik {
-
-class RouterPrivate
+class MRouterPrivate
 {
-    Q_DECLARE_PUBLIC(Router)
+    Q_DECLARE_PUBLIC(MRouter)
 public:
-    RouterPrivate();
-    virtual ~RouterPrivate();
+    MRouterPrivate();
+    virtual ~MRouterPrivate();
 
     void _q_state_changed(QAbstractSocket::SocketState state);
     void _q_ready_read();
@@ -26,8 +25,7 @@ public:
     void write_word(const QString &word);
     void write_sentence(const QStringList &sentence);
     void process_incoming_sentence(const QStringList &sentence);
-
-    void test();
+    void send_command();
 
     QHostAddress address;
     quint16 port;
@@ -41,12 +39,10 @@ public:
 
     QByteArray t;
 
-    Router * q_ptr;
+    MRouter * q_ptr;
+    MRouter::STATE state;
 
-    Router::STATE state;
-
-    QList<QStringList> requestList;
+    QList<MCommand> commands;
 };
 
-} // qmikrotik
-#endif // ROUTERPRIVATE_H
+#endif // MROUTERPRIVATE_H

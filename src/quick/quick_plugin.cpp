@@ -1,12 +1,12 @@
 #include "quick_plugin.h"
-#include "router.h"
+#include "mrouter.h"
 
 #include <qqml.h>
 
 void QuickPlugin::registerTypes(const char *uri)
 {
-    // @uri com.romixlab.qmlcomponents2
-    qmlRegisterType<qmikrotik::Router>(uri, 1, 0, "Router");
+    // @uri com.marsworks.qmlcomponents2
+    qmlRegisterType<MRouter>(uri, 1, 0, "MRouter");
 }
 
 

@@ -1,27 +1,32 @@
-#include "router.h"
-#include "router_p.h"
-#include "sysdep.h"
 #include <QTcpSocket>
 #include <QCryptographicHash>
 #include <QTimer>
 
-using namespace qmikrotik;
+#include "mrouter.h"
+#include "mrouter_p.h"
+#include "mcommand_p.h"
+#include "endianhelper.h"
 
-RouterPrivate::RouterPrivate() : pos(0), state(Router::DISCONNECTED) {}
-RouterPrivate::~RouterPrivate() {}
 
-void RouterPrivate::_q_state_changed(QAbstractSocket::SocketState state)
+MRouterPrivate::MRouterPrivate() :
+    port(8728),
+    pos(0),
+    state(MRouter::DISCONNECTED)
+{ }
+
+MRouterPrivate::~MRouterPrivate() { }
+
+void MRouterPrivate::_q_state_changed(QAbstractSocket::SocketState state)
 {
-    qDebug() << "new state:" << state;
     if (state == QTcpSocket::ConnectedState) {
         write_sentence(QStringList() << "/login");
-        this->state = Router::LOGGING_IN;
-        Q_Q(Router);
+        this->state = MRouter::LOGGING_IN;
+        Q_Q(MRouter);
         emit q->stateChanged(this->state);
     }
 }
 
-void RouterPrivate::_q_ready_read()
+void MRouterPrivate::_q_ready_read()
 {
     bytes += tcpSocket->readAll();
 
@@ -29,18 +34,13 @@ void RouterPrivate::_q_ready_read()
     quint8 *start = p;
     quint32 len;
     bool ok;
-//    qDebug() << "bytes size" << bytes.length();
-//    qDebug() << "pos" << pos;
     while (p - start < bytes.length()) {
         quint8 *pmoved = unpack_length(len, p, bytes.length() - (p - start), &ok);
         if (!ok) {
- //           qDebug() << "waiting for next chunk";
             pos = p - start;
             return;
         }
- //       qDebug() << "want" << len;
         if (p + len >= p + bytes.length()) {
- //           qDebug() << "waiting(2) for next chunk";
             pos = p - start;
             return;
         }
@@ -55,15 +55,15 @@ void RouterPrivate::_q_ready_read()
     pos = 0;
 }
 
-void RouterPrivate::_q_error(QAbstractSocket::SocketError error)
+void MRouterPrivate::_q_error(QAbstractSocket::SocketError error)
 {
-    qDebug() << error;
-    Q_Q(Router);
-    state = Router::DISCONNECTED;
+    Q_Q(MRouter);
+    Q_UNUSED(error);
+    state = MRouter::DISCONNECTED;
     emit q->stateChanged(state);
 }
 
-QByteArray RouterPrivate::pack_length(quint32 length)
+QByteArray MRouterPrivate::pack_length(quint32 length)
 {
     QByteArray packed;
     quint8 *p = (quint8 *)packed.data();
@@ -72,16 +72,16 @@ QByteArray RouterPrivate::pack_length(quint32 length)
         p[0] = (quint8)length;
     } else if (length < 0x4000) {
         packed.resize(2);
-        _msgpack_store16(p, (quint16)length);
+        endian_store16(p, (quint16)length);
         p[0] |= 0x80;
     } else if (length < 0x200000) {
         packed.resize(3);
-        quint32 val = _msgpack_be32(length);
+        quint32 val = endian_be32(length);
         memcpy(p, &val, 3);
         p[0] |= 0xc0;
     } else if (length < 0x10000000) {
         packed.resize(4);
-        _msgpack_store32(p, length);
+        endian_store32(p, length);
         p[0] |= 0xe0;
     } else {
         qWarning() << "Word is too big";
@@ -90,27 +90,24 @@ QByteArray RouterPrivate::pack_length(quint32 length)
     return packed;
 }
 
-quint8 *RouterPrivate::unpack_length(quint32 &to, quint8 *p, quint32 available, bool *success)
+quint8 *MRouterPrivate::unpack_length(quint32 &to, quint8 *p, quint32 available, bool *success)
 {
     if (available == 0) {
-        qDebug() << "s1";
         *success = false;
         return p;
     }
     *success = true;
     if ((p[0] & 0xe0) == 0xe0) {
         if (available < 4) {
-            qDebug() << "s2";
             *success = false;
             return p;
         }
-        quint32 val = _msgpack_load32(quint32, p);
+        quint32 val = endian_load32(quint32, p);
         val &= 0x1fffffff;
         to = val;
         return p + 4;
     } else if ((p[0] & 0xc0) == 0xc0) {
         if (available < 3) {
-            qDebug() << "s3";
             *success = false;
             return p;
         }
@@ -122,11 +119,10 @@ quint8 *RouterPrivate::unpack_length(quint32 &to, quint8 *p, quint32 available, 
         return p + 3;
     } else if ((p[0] & 0x80) == 0x80) {
         if (available < 2) {
-            qDebug() << "s4";
             *success = false;
             return p;
         }
-        quint16 val = _msgpack_load16(quint16, p);
+        quint16 val = endian_load16(quint16, p);
         val &= 0x7fff;
         to = val;
         return p + 2;
@@ -138,41 +134,40 @@ quint8 *RouterPrivate::unpack_length(quint32 &to, quint8 *p, quint32 available, 
     return p;
 }
 
-void RouterPrivate::write_word(const QString &word)
+void MRouterPrivate::write_word(const QString &word)
 {
     tcpSocket->write(pack_length(word.length()));
     tcpSocket->write(word.toUtf8().constData(), word.length());
 }
 
-void RouterPrivate::write_sentence(const QStringList &sentence)
+void MRouterPrivate::write_sentence(const QStringList &sentence)
 {
     foreach (const QString &word, sentence)
         write_word(word);
     write_word("");
 }
 
-void RouterPrivate::process_incoming_sentence(const QStringList &sentence)
+void MRouterPrivate::process_incoming_sentence(const QStringList &sentence)
 {
-    qDebug() << "processing" << sentence;
-    Q_Q(Router);
-    if (state == Router::EXECUTING) {
-        emit q->reply(sentence);
-        if (!requestList.isEmpty()) {
-            write_sentence(requestList.first());
-            requestList.pop_front();
-        } else {
-            state = Router::READY;
-            emit q->stateChanged(state);
-        }
-    } else if (state == Router::LOGGING_IN) {
+    Q_Q(MRouter);
+    if (state == MRouter::EXECUTING) {
+        MCommand cmd = commands.front();
+        if (cmd.d->lambda)
+            cmd.d->lambda(sentence);
+        if (cmd.d->lambda_id)
+            cmd.d->lambda_id(cmd.d->id, sentence);
+        commands.removeFirst();
+        send_command();
+    } else if (state == MRouter::LOGGING_IN) {
         if (sentence.length() == 2 && sentence[0] == "!done") {
-            state = Router::READY;
+            state = MRouter::READY;
             emit q->stateChanged(state);
+            send_command();
             return;
         } else if ((sentence.length() != 3) ||
                    (sentence.length() == 3 && sentence[0] != "!done")) {
             tcpSocket->close();
-            state = Router::DISCONNECTED;
+            state = MRouter::DISCONNECTED;
             emit q->stateChanged(state);
             return;
         }
@@ -190,21 +185,31 @@ void RouterPrivate::process_incoming_sentence(const QStringList &sentence)
     }
 }
 
-void RouterPrivate::test()
+void MRouterPrivate::send_command()
 {
-    QByteArray len = pack_length(3);
-
-    t = len;
-    _q_ready_read();
-    t = QByteArray("ab", 2);
-    _q_ready_read();
-    t = QByteArray("c", 1);
-    _q_ready_read();
+    Q_Q(MRouter);
+    if (!commands.isEmpty()) {
+        if (state != MRouter::EXECUTING) {
+            state = MRouter::EXECUTING;
+            emit q->stateChanged(state);
+        }
+        MCommand cmd = commands.front();
+        if (cmd.d->command.isEmpty()) {
+            commands.removeFirst();
+            send_command();
+        }
+        write_sentence(cmd.d->command);
+    } else {
+        if (state == MRouter::READY)
+            return;
+        state = MRouter::READY;
+        emit q->stateChanged(state);
+    }
 }
 
-Router::Router(QObject *parent) : QObject(parent), d_ptr(new RouterPrivate)
+MRouter::MRouter(QObject *parent) : QObject(parent), d_ptr(new MRouterPrivate)
 {
-    Q_D(Router);
+    Q_D(MRouter);
     d->q_ptr = this;
     d->tcpSocket = new QTcpSocket(this);
     connect(d->tcpSocket, SIGNAL(stateChanged(QAbstractSocket::SocketState)),
@@ -215,111 +220,124 @@ Router::Router(QObject *parent) : QObject(parent), d_ptr(new RouterPrivate)
             this, SLOT(_q_error(QAbstractSocket::SocketError)));
 }
 
-Router::Router(RouterPrivate &dd, QObject *parent) : QObject(parent), d_ptr(&dd)
+MRouter::MRouter(MRouterPrivate &dd, QObject *parent) : QObject(parent), d_ptr(&dd)
 {
-    Q_D(Router);
+    Q_D(MRouter);
     d->q_ptr = this;
 }
 
-Router::~Router()
+MRouter::~MRouter()
 {
-    Q_D(Router);
+    Q_D(MRouter);
     if (d) {
         delete d;
     }
 }
 
-void Router::setAddress(const QHostAddress &address)
+void MRouter::setAddress(const QHostAddress &address)
 {
-    Q_D(Router);
+    Q_D(MRouter);
     d->address = address;
 }
 
-QHostAddress Router::address() const
+QHostAddress MRouter::address() const
 {
-    Q_D(const Router);
+    Q_D(const MRouter);
     return d->address;
 }
 
-void Router::setAddressString(const QString &address)
+void MRouter::setAddressString(const QString &address)
 {
-    Q_D(Router);
+    Q_D(MRouter);
     d->address = QHostAddress(address);
 }
 
-QString Router::addressString() const
+QString MRouter::addressString() const
 {
-    Q_D(const Router);
+    Q_D(const MRouter);
     return d->address.toString();
 }
 
-void Router::setPort(quint16 port)
+void MRouter::setPort(quint16 port)
 {
-    Q_D(Router);
+    Q_D(MRouter);
     d->port = port;
 }
 
-quint16 Router::port() const
+quint16 MRouter::port() const
 {
-    Q_D(const Router);
+    Q_D(const MRouter);
     return d->port;
 }
 
-void Router::setUsername(const QString &username)
+void MRouter::setUsername(const QString &username)
 {
-    Q_D(Router);
+    Q_D(MRouter);
     d->username = username;
 }
 
-QString Router::username() const
+QString MRouter::username() const
 {
-    Q_D(const Router);
+    Q_D(const MRouter);
     return d->username;
 }
 
-void Router::setPassword(const QString &password)
+void MRouter::setPassword(const QString &password)
 {
-    Q_D(Router);
+    Q_D(MRouter);
     d->password = password;
 }
 
-QString Router::password() const
+QString MRouter::password() const
 {
-    Q_D(const Router);
+    Q_D(const MRouter);
     return d->password;
 }
 
-Router::STATE Router::state() const
+MRouter::STATE MRouter::state() const
 {
-    Q_D(const Router);
+    Q_D(const MRouter);
     return d->state;
 }
 
-void Router::login()
+QString MRouter::stateString() const
 {
-    Q_D(Router);
-    d->tcpSocket->connectToHost(d->address, d->port);
-    //d->test();
+    Q_D(const MRouter);
+    switch (d->state) {
+    case DISCONNECTED:
+        return QStringLiteral("Disconnected");
+    case CONNECTING:
+        return QStringLiteral("Connecting");
+    case LOGGING_IN:
+        return QStringLiteral("Logging in");
+    case EXECUTING:
+        return QStringLiteral("Executing");
+    case READY:
+        return QStringLiteral("Ready");
+    }
+    return QStringLiteral("");
 }
 
-void Router::logout()
+MCommand MRouter::command(const QStringList &command)
 {
-    Q_D(Router);
+    Q_D(MRouter);
+    MCommand cmd(command);
+    d->commands.append(cmd);
+    return cmd;
+}
+
+void MRouter::login()
+{
+    Q_D(MRouter);
+    d->tcpSocket->connectToHost(d->address, d->port);
+}
+
+void MRouter::logout()
+{
+    Q_D(MRouter);
     d->tcpSocket->close();
     d->state = DISCONNECTED;
     emit stateChanged(d->state);
 }
 
-void Router::request(const QStringList &sentence)
-{
-    Q_D(Router);
-    if (d->state == EXECUTING) {
-        d->requestList.append(sentence);
-        return;
-    }
-    d->state = EXECUTING;
-    emit stateChanged(d->state);
-    d->write_sentence(sentence);
-}
-
-#include "moc_router.cpp"
+#include "moc_mrouter.cpp" // intentionally, for private slots to work

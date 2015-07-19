@@ -1,13 +1,10 @@
 TEMPLATE = lib
-TARGET = quick
-QT += qml quick
+TARGET = mikrotik
+QT += qml
 CONFIG += qt plugin
+QMAKE_CXXFLAGS += -std=c++11
 
 include(../../qmikrotik.pri)
-RCC_DIR = $$BUILD_DIR/$$TARGET/rcc_files
-UI_DIR = $$BUILD_DIR/$$TARGET/uic_files
-MOC_DIR = $$BUILD_DIR/$$TARGET/moc_files
-OBJECTS_DIR = $$BUILD_DIR/$$TARGET/obj_files
 
 DESTDIR = $$ROOT_DIR/qml
 
